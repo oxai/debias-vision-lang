@@ -8,6 +8,8 @@ Authors: [Hugo Berg](https://github.com/Drummersbrother),
 [Aleksandar Shtedritski](https://github.com/suny-sht), 
 [Max Bain](https://github.com/m-bain)
 
+Corresponding author: Hugo Berg, <hugo@hugob.se>
+
 
 ![Main Figure](plots/Main_figure.png)
 
