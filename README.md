@@ -85,4 +85,10 @@ $ ipython metrics_plotting.ipynb
 Our code is licensed under the MIT licence. Read [LICENCE.txt](LICENCE.txt) for more.
 
 ## Citation
-TODO: Add bibtex entry to arxiv paper
+```
+@report{,
+   abstract = {Vision-language models can encode societal biases and stereotypes, but there are challenges to measuring and mitigating these harms. Prior proposed bias measurements lack robustness and feature degradation occurs when mitigating bias without access to pretraining data. We address both of these challenges in this paper: First, we evaluate different bias measures and propose the use of retrieval metrics to image-text representations via a bias measuring framework. Second, we investigate debiasing methods and show that optimizing for adversarial loss via learnable token embeddings minimizes various bias measures without substantially degrading feature representations.},
+   author = {Hugo Berg and Siobhan Mackenzie Hall and Yash Bhalgat and Wonsuk Yang and Hannah Rose Kirk and Aleksandar Shtedritski and Max Bain},
+   title = {A Prompt Array Keeps the Bias Away: Debiasing Vision-Language Models with Adversarial Learning},
+}
+```
