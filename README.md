@@ -86,9 +86,10 @@ Our code is licensed under the MIT licence. Read [LICENCE.txt](LICENCE.txt) for 
 
 ## Citation
 ```
-@report{,
-   abstract = {Vision-language models can encode societal biases and stereotypes, but there are challenges to measuring and mitigating these harms. Prior proposed bias measurements lack robustness and feature degradation occurs when mitigating bias without access to pretraining data. We address both of these challenges in this paper: First, we evaluate different bias measures and propose the use of retrieval metrics to image-text representations via a bias measuring framework. Second, we investigate debiasing methods and show that optimizing for adversarial loss via learnable token embeddings minimizes various bias measures without substantially degrading feature representations.},
-   author = {Hugo Berg and Siobhan Mackenzie Hall and Yash Bhalgat and Wonsuk Yang and Hannah Rose Kirk and Aleksandar Shtedritski and Max Bain},
-   title = {A Prompt Array Keeps the Bias Away: Debiasing Vision-Language Models with Adversarial Learning},
+@article{berg2022prompt,
+  title={A Prompt Array Keeps the Bias Away: Debiasing Vision-Language Models with Adversarial Learning},
+  author={Berg, Hugo and Hall, Siobhan Mackenzie and Bhalgat, Yash and Yang, Wonsuk and Kirk, Hannah Rose and Shtedritski, Aleksandar and Bain, Max},
+  journal={arXiv preprint arXiv:2203.11933},
+  year={2022}
 }
 ```
