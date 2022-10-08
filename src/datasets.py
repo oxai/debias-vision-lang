@@ -4,7 +4,7 @@ import os
 import random
 from abc import ABC, abstractmethod
 from typing import List, Callable, Union, Dict
-
+import json
 import numpy as np
 import pandas as pd
 import torch
@@ -16,23 +16,12 @@ from torch.nn import functional as F
 from src import Dotdict, PATHS
 from src.data_utils import _load_cache, _save_cache
 
-"""
-We follow OpenAI's CIFAR evaluation protocol, to do classification in a ZS way. As inferred from their method, 
-they average the embeddings of multiple prompts. We saw a ~2% increase in performance on CIFAR100 compared 
-with only "a photo of a {}"
-SEE: https://github.com/openai/CLIP/blob/e184f608c5d5e58165682f7c332c3a8b4c1545f2/data/prompts.md
-"""
-
 
 def _load_prompt_templates(fname: str):
-    raw_prompt_iterations = pd.read_csv(
-        os.path.join(PATHS.IAT.PROMPTS, fname), skipinitialspace=True
-    )
+    raw_prompt_iterations = pd.read_csv(os.path.join(PATHS.IAT.PROMPTS, fname), skipinitialspace=True)
     templates = dict()
     for iat_type in raw_prompt_iterations:
-        templates[iat_type] = (
-            raw_prompt_iterations[iat_type].dropna().str.strip().tolist()
-        )
+        templates[iat_type] = raw_prompt_iterations[iat_type].dropna().str.strip().tolist()
 
     pt_columns = ["group", "template"]
     prompt_groups = list(templates.keys())
@@ -47,46 +36,37 @@ def _load_prompt_templates(fname: str):
 
 PROMPT_TEMPLATES = {}
 for prompt_file in glob.glob(os.path.join(PATHS.IAT.PROMPTS, "prompt_*.csv")):
-    PROMPT_TEMPLATES[
-        os.path.basename(prompt_file)[: -len(".csv")]
-    ] = _load_prompt_templates(os.path.basename(prompt_file))
-
-
+    PROMPT_TEMPLATES[os.path.basename(prompt_file)[:-len(".csv")]] = _load_prompt_templates(
+        os.path.basename(prompt_file))
+# We follow OpenAI's cifar evaluation protocol, to do classification in a ZS way, they average the embeddings of
+# multiple prompts. We saw a ~2% increase in performance on cifar100 compared with only "a photo of a {}"
+# from https://github.com/openai/CLIP/blob/e184f608c5d5e58165682f7c332c3a8b4c1545f2/data/prompts.md
 CIFAR_ZS_OAI_PROMPTS = [
-    "a photo of a {}.",
-    "a blurry photo of a {}.",
-    "a black and white photo of a {}.",
-    "a low contrast photo of a {}.",
-    "a high contrast photo of a {}.",
-    "a bad photo of a {}.",
-    "a good photo of a {}.",
-    "a photo of a small {}.",
-    "a photo of a big {}.",
-    "a photo of the {}.",
-    "a blurry photo of the {}.",
-    "a black and white photo of the {}.",
-    "a low contrast photo of the {}.",
-    "a high contrast photo of the {}.",
-    "a bad photo of the {}.",
-    "a good photo of the {}.",
-    "a photo of the small {}.",
-    "a photo of the big {}.",
+    'a photo of a {}.',
+    'a blurry photo of a {}.',
+    'a black and white photo of a {}.',
+    'a low contrast photo of a {}.',
+    'a high contrast photo of a {}.',
+    'a bad photo of a {}.',
+    'a good photo of a {}.',
+    'a photo of a small {}.',
+    'a photo of a big {}.',
+    'a photo of the {}.',
+    'a blurry photo of the {}.',
+    'a black and white photo of the {}.',
+    'a low contrast photo of the {}.',
+    'a high contrast photo of the {}.',
+    'a bad photo of the {}.',
+    'a good photo of the {}.',
+    'a photo of the small {}.',
+    'a photo of the big {}.',
 ]
 
 
 class IATDataset(Dataset, ABC):
     GENDER_ENCODING = {"Female": 1, "Male": 0}
-    AGE_ENCODING = {
-        "0-2": 0,
-        "3-9": 1,
-        "10-19": 2,
-        "20-29": 3,
-        "30-39": 4,
-        "40-49": 5,
-        "50-59": 6,
-        "60-69": 7,
-        "more than 70": 8,
-    }
+    AGE_ENCODING = {"0-2": 0, "3-9": 1, "10-19": 2, "20-29": 3, "30-39": 4,
+                    "40-49": 5, "50-59": 6, "60-69": 7, "more than 70": 8}
 
     def __init__(self):
         self.image_embeddings: torch.Tensor = None
@@ -98,92 +78,61 @@ class IATDataset(Dataset, ABC):
         self.n_iat_classes = None
 
     def gen_labels(self, iat_type: str, label_encoding: object = None):
-
+        # WARNING: iat_type == "pairwise_adjective" is no longer supported
         if iat_type in ("gender_science", "test_weat", "gender"):
             labels_list = self.labels["gender"]
-            label_encoding = (
-                IATDataset.GENDER_ENCODING if label_encoding is None else label_encoding
-            )
+            label_encoding = IATDataset.GENDER_ENCODING if label_encoding is None else label_encoding
         elif iat_type == "race":
             labels_list = self.labels["race"]
-            label_encoding = (
-                self.RACE_ENCODING if label_encoding is None else label_encoding
-            )
+            label_encoding = self.RACE_ENCODING if label_encoding is None else label_encoding
         elif iat_type == "age":
             labels_list = self.labels["age"]
-            label_encoding = (
-                IATDataset.AGE_ENCODING if label_encoding is None else label_encoding
-            )
+            label_encoding = IATDataset.AGE_ENCODING if label_encoding is None else label_encoding
+
+        # elif iat_type == "pairwise_adjectives":
+        #     assert isinstance(label_extra, Callable), "Must give a callable mapping row -> bool"
+        #     labels_list = np.array(self.labels.apply(label_extra, axis=1), dtype=int)
         else:
             raise NotImplementedError
-        assert set(labels_list.unique()) == set(
-            label_encoding.keys()
-        ), "There is a missing label, invalid for WEAT"
-        labels_list = np.array(
-            labels_list.apply(lambda x: label_encoding[x]), dtype=int
-        )
-
+        assert set(labels_list.unique()) == set(label_encoding.keys()), "There is a missing label, invalid for WEAT"
+        labels_list = np.array(labels_list.apply(lambda x: label_encoding[x]), dtype=int)
+        # assert labels_list.sum() != 0 and (1 - labels_list).sum() != 0, "Labels are all equal, invalid for Weat"
         return labels_list, len(label_encoding)
 
-    def recomp_img_embeddings(
-        self,
-        model: torch.nn.Module,
-        model_alias: str,
-        device: torch.device,
-        progress: bool = True,
-    ):
+    def recomp_img_embeddings(self, model: torch.nn.Module, model_alias: str, device: torch.device,
+                              progress: bool = True):
         self.image_embeddings = None
-        self.image_embeddings = compute_img_embeddings(
-            self, model, model_alias, device, progress
-        )
+        self.image_embeddings = compute_img_embeddings(self, model, model_alias, device, progress)
 
-    def recomp_iat_labels(self, iat_type: str = None, label_encoding=None):
-        if iat_type is None:
-            iat_type = self.iat_type
-        if self.iat_labels is not None:
-            return
+    def recomp_iat_labels(self, iat_type: str=None, label_encoding=None):
+        if iat_type is None: iat_type = self.iat_type
+        if self.iat_labels is not None: return
         self.iat_labels, self.n_iat_classes = self.gen_labels(iat_type, label_encoding)
 
 
-def compute_img_embeddings(
-    dataset: IATDataset,
-    model,
-    model_alias: str,
-    device: torch.device,
-    progress: bool = True,
-) -> torch.Tensor:
+def compute_img_embeddings(dataset: IATDataset, model, model_alias: str, device: torch.device,
+                           progress: bool = True) -> torch.Tensor:
     if progress:
         progbar = tqdm.tqdm
     else:
-
         def progbar(it, *args, **kwargs):
             return it
 
     if dataset.use_cache:
-        img_embeddings_cachename = (
-            f"preproc_image_embeddings_"
-            f"{str(dataset.__class__.__name__)+dataset.mode.capitalize()}_{model_alias}"
-        )
+        img_embeddings_cachename = f"preproc_image_embeddings_" \
+                                   f"{str(dataset.__class__.__name__)+dataset.mode.capitalize()}_{model_alias}"
         image_embeddings = _load_cache(img_embeddings_cachename)
     else:
         img_embeddings_cachename = None
         image_embeddings = None
 
     if image_embeddings is None:
-        print(
-            f"Computing image embeddings for {model_alias}"
-            f"{f', storing to cache {img_embeddings_cachename}' if dataset.use_cache else ''}..."
-        )
+        print(f"Computing image embeddings for {model_alias}"
+              f"{f', storing to cache {img_embeddings_cachename}' if dataset.use_cache else ''}...")
         image_embeddings = []
         dl = DataLoader(dataset, shuffle=False, num_workers=4, batch_size=128)
         with torch.no_grad():
-            for batch in progbar(
-                dl,
-                desc="Processing images",
-                position=1,
-                leave=False,
-                miniters=len(dl) // 200,
-            ):
+            for batch in progbar(dl, desc="Processing images", position=1, leave=False, miniters=len(dl)//200):
                 # encode images in batches for speed, move to cpu when storing to not waste GPU memory
                 output = model.encode_image(batch["img"].to(device))
                 image_embeddings.append(output.cpu().float())
@@ -199,35 +148,16 @@ def compute_img_embeddings(
 
 
 class FairFace(IATDataset):
-    RACE_ENCODING = {
-        "White": 0,
-        "Southeast Asian": 1,
-        "Middle Eastern": 2,
-        "Black": 3,
-        "Indian": 4,
-        "Latino_Hispanic": 5,
-        "East Asian": 6,
-    }
+    RACE_ENCODING = {"White": 0, "Southeast Asian": 1, "Middle Eastern": 2,
+                     "Black": 3, "Indian": 4, "Latino_Hispanic": 5, "East Asian": 6}
 
-    def __init__(
-        self,
-        *args,
-        iat_type: str = None,
-        lazy: bool = True,
-        mode: str = "train",
-        _n_samples: Union[float, int] = None,
-        transforms: Callable = None,
-        equal_split: bool = True,
-        use_cache: bool = True,
-        caching_params: dict = None,
-        **kwargs,
-    ):
+    def __init__(self, *args, iat_type: str = None, lazy: bool = True, mode: str = "train", _n_samples: Union[float, int] = None,
+                 transforms: Callable = None,
+                 equal_split: bool = True, use_cache: bool = True, caching_params: dict = None, **kwargs):
         self.mode = mode
         self.use_cache = use_cache
         self._transforms = (lambda x: x) if transforms is None else transforms
-        self.labels = pd.read_csv(
-            os.path.join(PATHS.FAIRFACE.LABELS, mode, f"{mode}_labels.csv")
-        )
+        self.labels = pd.read_csv(os.path.join(PATHS.FAIRFACE.LABELS, mode, f"{mode}_labels.csv"))
         self.labels.sort_values("file", inplace=True)
         if _n_samples is not None:
             if isinstance(_n_samples, float):
@@ -235,8 +165,8 @@ class FairFace(IATDataset):
 
             self.labels = self.labels[:_n_samples]
         if equal_split:
-            labels_male = self.labels.loc[self.labels["gender"] == "Male"]
-            labels_female = self.labels.loc[self.labels["gender"] == "Female"]
+            labels_male = self.labels.loc[self.labels['gender'] == 'Male']
+            labels_female = self.labels.loc[self.labels['gender'] == 'Female']
 
             num_females = labels_female.count()[0]
             num_males = labels_male.count()[0]
@@ -248,9 +178,8 @@ class FairFace(IATDataset):
 
             self.labels = labels_male.append(labels_female, ignore_index=True)
 
-        self._img_fnames = [
-            os.path.join(PATHS.FAIRFACE.IMAGES, x) for x in self.labels["file"]
-        ]
+
+        self._img_fnames = [os.path.join(PATHS.FAIRFACE.IMAGES, x) for x in self.labels["file"]]
         self._fname_to_inx = {fname: inx for inx, fname in enumerate(self._img_fnames)}
 
         self.images_list = None
@@ -289,38 +218,19 @@ class FairFace(IATDataset):
 
 
 class UTKFace(IATDataset):
-    RACE_ENCODING = {
-        "White": 0,
-        "Black": 1,
-        "East Asian_Southeast Asian": 2,
-        "Indian": 3,
-        "Latino_Hispanic_Middle Eastern": 4,
-    }
+    RACE_ENCODING = {"White": 0, "Black": 1, "East Asian_Southeast Asian": 2,
+                     "Indian": 3, "Latino_Hispanic_Middle Eastern": 4}
 
-    def __init__(
-        self,
-        *args,
-        iat_type: str = None,
-        lazy: bool = True,
-        _n_samples: Union[float, int] = None,
-        transforms: Callable = None,
-        use_cache: bool = True,
-        caching_params: dict = None,
-        mode: str = None,
-        **kwargs,
-    ):
+    def __init__(self, *args, iat_type: str = None, lazy: bool = True, _n_samples: Union[float, int] = None,
+                 transforms: Callable = None, use_cache: bool = True, caching_params: dict = None, mode: str=None, **kwargs):
         if mode is not None:
-            print(
-                f"UTKFace was given mode {mode}, but only has one mode, which will be used."
-            )
+            print(f"UTKFace was given mode {mode}, but only has one mode, which will be used.")
         for n, k in kwargs.items():
             print(f"UTKFace was unrecognised argument {n}: {k}.")
         self.mode = ""
 
         self._transforms = (lambda x: x) if transforms is None else transforms
-        self.image_paths = sorted(
-            glob.glob(os.path.join(PATHS.UTKFACE.IMGS, "*.jpg")), key=os.path.basename
-        )
+        self.image_paths = sorted(glob.glob(os.path.join(PATHS.UTKFACE.IMGS, "*.jpg")), key=os.path.basename)
         self.use_cache = use_cache
         # To get a shuffle, but the same shuffle every time
         random.Random(1).shuffle(self.image_paths)
@@ -329,14 +239,7 @@ class UTKFace(IATDataset):
                 _n_samples = int(len(self.image_paths) * _n_samples)
             self.image_paths = self.image_paths[:_n_samples]
 
-        self.labels = pd.DataFrame(
-            list(
-                map(
-                    self._utk_labelparse,
-                    [os.path.basename(x) for x in self.image_paths],
-                )
-            )
-        )
+        self.labels = pd.DataFrame(list(map(self._utk_labelparse, [os.path.basename(x) for x in self.image_paths])))
 
         self.images_list = None
         if not lazy:
@@ -359,10 +262,8 @@ class UTKFace(IATDataset):
     @staticmethod
     def _utk_labelparse(fname: str) -> dict:
         def age_binning(age: int) -> str:
-            """
-            FairFace style age binning:
-            Age groups include: 0-2, 3-9, 10-19, 20-29, ..., 60-69, more than 70
-            """
+            # fairface style age binning
+            # age groups include: 0-2, 3-9, 10-19, 20-29, ..., 60-69, more than 70
             if 0 <= age <= 2:
                 return "0-2"
             elif 3 <= age <= 9:
@@ -374,22 +275,11 @@ class UTKFace(IATDataset):
                 else:
                     return f"{str(tens * 10)}-{str(tens * 10 + 9)}"
 
-        inx_to_ff_races = [
-            "White",
-            "Black",
-            "East Asian_Southeast Asian",
-            "Indian",
-            "Latino_Hispanic_Middle Eastern",
-        ]
+        inx_to_ff_races = ["White", "Black", "East Asian_Southeast Asian", "Indian", "Latino_Hispanic_Middle Eastern"]
         num_labels = fname.split("_")[:3]
-        labels = {
-            "age": age_binning(
-                int(num_labels[0])
-            ),  # f"{num_labels[0]}-{int(num_labels[0]) + 1}",
-            "gender": "Female" if int(num_labels[1]) else "Male",
-            "race": inx_to_ff_races[int(num_labels[2])],
-            "file": fname,
-        }
+        labels = {"age": age_binning(int(num_labels[0])),  # f"{num_labels[0]}-{int(num_labels[0]) + 1}",
+                  "gender": "Female" if int(num_labels[1]) else "Male", "race": inx_to_ff_races[int(num_labels[2])],
+                  "file": fname}
         return labels
 
     def _load_utkface_sample(self, img_fname) -> dict:
@@ -419,17 +309,8 @@ class UTKFace(IATDataset):
 
 
 class CelebA(IATDataset):
-    def __init__(
-        self,
-        *args,
-        cropped: bool = False,
-        _n_samples: Union[float, int] = None,
-        transforms=None,
-        iat_type: str = None,
-        use_cache: bool = True,
-        caching_params: dict = None,
-        **kwargs,
-    ):
+    def __init__(self, *args, cropped: bool = False, _n_samples: Union[float, int] = None, transforms=None, iat_type: str = None,
+                 use_cache: bool = True, caching_params: dict = None, **kwargs):
         self.use_cache = use_cache
         self.img_base_path = PATHS.CELEBA.CROPPED if cropped else PATHS.CELEBA.UNCROPPED
         self._dont_load_images = False
@@ -443,16 +324,12 @@ class CelebA(IATDataset):
         self.labels = pd.DataFrame(self.labels)
 
         if mode := kwargs.pop("mode", None) is not None:
-            print(
-                f"CelebA was given mode {mode}, but only has one mode, which will be used."
-            )
+            print(f"UTKFace was given mode {mode}, but only has one mode, which will be used.")
         self.mode = ""
         if kwargs:
             print(f"CelebA got unknown kwargs: {kwargs}")
 
-        self._img_fnames = [
-            os.path.join(self.img_base_path, x) for x in self.labels["file"]
-        ]
+        self._img_fnames = [os.path.join(self.img_base_path, x) for x in self.labels["file"]]
         self._fname_to_inx = {fname: inx for inx, fname in enumerate(self._img_fnames)}
 
         self.image_embeddings = None
@@ -479,25 +356,14 @@ class CelebA(IATDataset):
         with open(PATHS.CELEBA.ATTRS, mode="r") as attr_file:
             file_lines = [x.strip() for x in attr_file.readlines()]
             _, attrs_raw, *data_lines = file_lines
-            attr_lookup = {
-                attr_name: attr_inx
-                for attr_inx, attr_name in enumerate(attrs_raw.split())
-            }
+            attr_lookup = {attr_name: attr_inx for attr_inx, attr_name in enumerate(attrs_raw.split())}
             # Parses the data (unpack into for loops to understand)
-            img_to_attrs = {
-                img_name: _label_standardizer(
-                    {
-                        attr_name: attr_data[attr_lookup[attr_name]] == "1"
-                        for attr_name in interested_in
-                    }
-                )
-                for img_name, *attr_data in map(lambda row: row.split(), data_lines)
-            }
+            img_to_attrs = {img_name: _label_standardizer(
+                {attr_name: attr_data[attr_lookup[attr_name]] == "1" for attr_name in interested_in}) for
+                img_name, *attr_data in map(lambda row: row.split(), data_lines)}
 
-        return sorted(
-            [{"file": img_name, **labels} for img_name, labels in img_to_attrs.items()],
-            key=lambda v: v["file"],
-        )
+        return sorted([{"file": img_name, **labels} for img_name, labels in img_to_attrs.items()],
+                      key=lambda v: v["file"])
 
     def _load_celeba_sample(self, sample_labels) -> dict:
         res = Dotdict(dict(sample_labels))
@@ -521,17 +387,8 @@ class CelebA(IATDataset):
 
 
 class COCOGender(IATDataset):
-    def __init__(
-        self,
-        *args,
-        iat_type: str = None,
-        _n_samples: Union[float, int] = None,
-        transforms: Callable = None,
-        use_cache: bool = True,
-        caching_params: dict = None,
-        mode: str = None,
-        **kwargs,
-    ):
+    def __init__(self, *args, iat_type: str=None, _n_samples: Union[float, int] = None, transforms: Callable = None, use_cache: bool = True,
+                 caching_params: dict = None, mode: str=None, **kwargs):
         if mode is None:
             print(f"COCOGender was given no mode {mode}, train will be used.")
             mode = "train"
@@ -542,33 +399,19 @@ class COCOGender(IATDataset):
 
         self._transforms = (lambda x: x) if transforms is None else transforms
         self.image_paths = []
-        self.image_paths.extend(
-            sorted(
-                glob.glob(os.path.join(self.base_img_path, "male", "*.jpg")),
-                key=os.path.basename,
-            )
-        )
-        self.image_paths.extend(
-            sorted(
-                glob.glob(os.path.join(self.base_img_path, "female", "*.jpg")),
-                key=os.path.basename,
-            )
-        )
+        self.image_paths.extend(sorted(glob.glob(os.path.join(self.base_img_path, "male", "*.jpg")), key=os.path.basename))
+        self.image_paths.extend(sorted(glob.glob(os.path.join(self.base_img_path, "female", "*.jpg")), key=os.path.basename))
         self.use_cache = use_cache
-        # To get a consistently reproducible shuffle
+        # To get a shuffle, but the same shuffle every time
         random.Random(1).shuffle(self.image_paths)
         if _n_samples is not None:
             if isinstance(_n_samples, float):
                 _n_samples = int(len(self.image_paths) * _n_samples)
             self.image_paths = self.image_paths[:_n_samples]
 
-        self.label_parser = lambda p: {
-            "file": p,
-            "gender": os.path.dirname(p).split(os.path.sep)[-1].capitalize(),
-        }
-        self.labels = pd.DataFrame(
-            list(map(self.label_parser, [x for x in self.image_paths]))
-        )
+        self.label_parser = lambda p: {"file": p, "gender": os.path.dirname(p).split(os.path.sep)[-1].capitalize()}
+        self.labels = pd.DataFrame(list(map(self.label_parser,
+                                            [x for x in self.image_paths])))
 
         self.images_list = None
         self.labels.sort_values("file", inplace=True)
@@ -616,11 +459,9 @@ class IATWords(object):
         elif isinstance(prompt, int):
             self.prompt = PROMPT_TEMPLATES[iat_type][prompt]
 
-        self.prompt_file = os.path.join(
-            PATHS.IAT.PROMPTS, f"{iat_type.split('.')[0]}.csv"
-        )
+        self.prompt_file = os.path.join(PATHS.IAT.PROMPTS, f"{iat_type.split('.')[0]}.csv")
 
-        with open(self.prompt_file, "r") as f:
+        with open(self.prompt_file, 'r') as f:
             myreader = csv.reader(f, delimiter=",")
             a_attrs, b_attrs = myreader
 
@@ -630,15 +471,13 @@ class IATWords(object):
 
 
 class TextImageDataset(Dataset):
-    def __init__(
-        self,
-        dataset_name: str,
-        mode: str = "train",
-        subsample: float = 1.0,
-        use_cache: bool = True,
-        caching_params: dict = None,
-        transforms: Callable = None,
-    ):
+    def __init__(self,
+                 dataset_name: str,
+                 mode: str = 'train',
+                 subsample: float = 1.0,
+                 use_cache: bool = True,
+                 caching_params: dict = None,
+                 transforms: Callable = None):
         self.dataset_name = dataset_name
         self.mode = mode
         self.subsample = subsample
@@ -646,11 +485,9 @@ class TextImageDataset(Dataset):
         self._transforms = (lambda x: x) if transforms is None else transforms
 
         self._load_metadata()
-        if self.subsample < 1 and self.mode in ["train", "predict"]:
-            print(
-                f"WARNING: down-sampling data to fraction: {self.subsample}, should be used for",
-                "debugging / working on smaller data only.",
-            )
+        if self.subsample < 1 and self.mode in ['train', 'predict']:
+            print(f"WARNING: down-sampling data to fraction: {self.subsample}, should be used for",
+                  "debugging / working on smaller data only.")
             self.metadata = self.metadata.sample(frac=self.subsample)
 
     @abstractmethod
@@ -678,30 +515,71 @@ class TextImageDataset(Dataset):
 
 
 class Flickr30K(TextImageDataset):
-    """
-    Dataset download is nontrivial, you need to ask the authors for a copy.
-    """
-
+    """Dataset download is nontrivial, you need to ask the authors for a copy.
+    Can also technically download from a kaggle page (needs free account) with it...
+    https://www.kaggle.com/hsankesara/flickr-image-dataset"""
     def _load_metadata(self):
-        df = pd.read_csv(PATHS.FLICKR30K.METADATA, sep="\t", names=["id", "caption"])
-        df["filename"] = df["id"].str.split("#").str[0]
-        df["caption_id"] = df["id"].str.split("#").str[1]
+        df = pd.read_csv(PATHS.FLICKR30K.METADATA, sep='\t', names=["id", "caption"])
+        df['filename'] = df['id'].str.split('#').str[0]
+        df['caption_id'] = df['id'].str.split('#').str[1]
 
+        test_ims = pd.read_csv(PATHS.FLICKR30K.TEST_LIST, names=['filename'])
         if self.mode != "test":
-            raise NotImplementedError(
-                "Flickr is so far intended for evaluation (test on flickr1k), not trainining..."
-            )
+            #raise NotImplementedError("Flickr is so far intended for evaluation (test on flickr1k), not trainining...")
+            df = df[~df['filename'].isin(test_ims['filename'])]
         else:
-            test_ims = pd.read_csv(PATHS.FLICKR30K.TEST_LIST, names=["filename"])
-            df = df[df["filename"].isin(test_ims["filename"])]
+            df = df[df['filename'].isin(test_ims['filename'])]
 
         self.metadata = df
+        if self.subsample < 1.0:
+            print(f"### Subsampling dataset to: {self.subsample}")
+            self.metadata = self.metadata.sample(frac=self.subsample)
 
     def _get_caption(self, sample):
-        return sample["caption"]
+        return sample['caption']
 
     def _get_img_path(self, sample):
-        return (
-            os.path.join(PATHS.FLICKR30K.IMAGES, sample["filename"]),
-            sample["filename"],
-        )
+        return os.path.join(PATHS.FLICKR30K.IMAGES, sample['filename']), sample['filename']
+
+
+class COCOCaptions(TextImageDataset):
+    def _load_metadata(self):
+
+        self.data_dir = "/scratch/local/ssd/maxbain/COCO-Captions"
+        self.metadata_dir = self.data_dir
+        self.file_split = 'train'
+
+        if self.mode != 'train':
+            self.file_split = 'val'
+
+        # with open(os.path.join(self.metadata_dir, 'annotations', f'captions_{self.file_split}2017.json')) as fid:
+        with open(os.path.join(self.metadata_dir, 'annotations', f'ALBEF_coco.json')) as fid:
+            metadata = json.load(fid)
+
+        # metadata = pd.DataFrame(metadata['annotations'])
+
+        ### ALBEF format
+        metadata = pd.DataFrame(metadata)
+        metadata['id'] = metadata['image_id'].str.split('_').str[1].astype(int)
+        metadata['split'] = metadata['image'].str.split('/').str[7].str.split('2').str[0]
+        metadata['fp'] = metadata['image'].str.replace('/export/share/datasets/vision/coco/images/', '')
+
+        if self.mode == 'train':
+            metadata = metadata[metadata['split'] == 'train']
+        else:
+            metadata = metadata[metadata['split'] == 'val']
+            metadata = metadata.sample(5000)
+
+        self.metadata = metadata
+
+    def _get_img_path(self, sample):
+        rel_fp = os.path.join(sample['fp'])
+
+        return os.path.join(self.data_dir, rel_fp), rel_fp
+
+    def _get_caption(self, sample):
+        return sample['caption']
+
+if __name__ == "__main__":
+    ds = COCOCaptions(dataset_name="COCOCaptions", mode='train')
+    print(ds.__getitem__(0))
