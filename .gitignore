@@ -65,6 +65,7 @@ db.sqlite3-journal
 # Flask stuff:
 instance/
 .webassets-cache
+.DS_Store
 
 # Scrapy stuff:
 .scrapy
@@ -148,4 +149,5 @@ lego/
 /datasets/pseudolabels/
 /experiment_results/
 /cache/
-.neptune/
+.neptune
+secrets
