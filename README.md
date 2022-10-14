@@ -36,13 +36,6 @@ computational cost.
  - The training dataset for the utilized GAN was collected from the 
  [YFCC-100M Flickr dataset](https://arxiv.org/abs/1503.01817).
 
-**[UTKFace Cropped image dataset](https://github.com/aicip/UTKFace)**:
-- Contains 20 000 images and includes four distinct ethnicities: White, Black, Asian, Indian, 
- and Others (like Hispanic, Latino, Middle Eastern). 
-- This is a notable limitation compared to FairFace which has individual classes for each of these. 
-- UTKFace is also very different to the qualitative characteristics of FairFace, in terms of 
- large variance in lighting conditions, color quality and angle of portraits. 
-
 ## Models
 - OpenAI's CLIP ([Radford *et al*., 2021](https://arxiv.org/abs/2103.00020))
 - SLIP ([Mu *et al*., 2021](https://arxiv.org/abs/2112.12750))
@@ -73,25 +66,26 @@ optimized to maximize the error of the adversary. In this way, biased correlatio
 text-image similarity scores and attribute labels are reduced whilst preventing significant 
 feature degradation.
 
-## Implement your own debiasing
-```bash
-$ pipenv sync --three
-$ ./datasets/download_all_datasets.sh
-$ ipython debiasing_experiments.ipynb
-$ ipython ranking_experiments.ipynb # works with pretrained models prior to debiasing
-$ ipython test_models.ipynb # works with trained models post debiasing
-$ ipython metrics_plotting.ipynb
-```
-
 ## Licence
-Our code is licensed under the MIT licence. Read [LICENCE.txt](LICENCE.txt) for more.
+Our code is licensed under the MIT licence. Read [LICENCE](LICENCE) for more.
 
 ## Citation
-```
+```bibtex
 @article{berg2022prompt,
   title={A Prompt Array Keeps the Bias Away: Debiasing Vision-Language Models with Adversarial Learning},
   author={Berg, Hugo and Hall, Siobhan Mackenzie and Bhalgat, Yash and Yang, Wonsuk and Kirk, Hannah Rose and Shtedritski, Aleksandar and Bain, Max},
   journal={arXiv preprint arXiv:2203.11933},
   year={2022}
+}
+```
+
+If you use FairFace to measure bias in your model please also consider citing their dataset
+
+```bibtex
+@article{karkkainen2019fairface,
+  title={Fairface: Face attribute dataset for balanced race, gender, and age},
+  author={K{\"a}rkk{\"a}inen, Kimmo and Joo, Jungseock},
+  journal={arXiv preprint arXiv:1908.04913},
+  year={2019}
 }
 ```
