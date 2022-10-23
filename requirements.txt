@@ -3,3 +3,8 @@ regex
 tqdm
 torch
 torchvision
+clip
+numpy
+pandas
+pillow
+gdown
