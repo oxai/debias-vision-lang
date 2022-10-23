@@ -1,3 +1,4 @@
+import pathlib
 from typing import Any
 
 class Dotdict(dict):
@@ -16,6 +17,10 @@ class Dotdict(dict):
     def __setstate__(self, d):
         self.__dict__.update(d)
 
-    
-from .model import *
 
+DATA_PATH = (pathlib.Path(__file__) / ".." / ".." / "data").resolve().absolute()
+FAIRFACE_DATA_PATH = DATA_PATH / "fairface"
+PROMPT_DATA_PATH = DATA_PATH / "prompt_templates.csv"
+
+from .model import *
+from measuring_bias import measure_bias

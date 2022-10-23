@@ -141,13 +141,4 @@ lego/
 .idea
 
 # Custom for our project
-/datasets/*/*data*/
-/datasets/foodi/
-/datasets/cifar100/
-/datasets/coco_gender/
-/datasets/foodx/
-/datasets/pseudolabels/
-/experiment_results/
-/cache/
-.neptune
-secrets
+/data/fairface

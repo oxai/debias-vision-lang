@@ -81,7 +81,3 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
     model.debias_tokens.weight = nn.Parameter(pt_embeddings) # load pt embeddings
 
     return model, preprocess
-
-if __name__ == "__main__":
-    model, preprocess = load("ViT-B/16-gender", device="cpu")
-    print(model.debias_tokens.weight)

@@ -132,6 +132,18 @@ Employs a ranking bias measure based on the Kullback-Leibler divergence, measuri
 distribution differs from another. This measure is non-negative, with larger values indicating a 
 greater divergence between the desired and actual distributions of attribute labels.
 
+### Measuring biases
+To get started with measuring the bias of a CLIP-like (has a text encoder and an image encoder) 
+model, you can simply do
+```python
+import clip
+import debias_clip
+
+my_clip, _ = clip.load("RN50")
+
+# measure bias, lower == less biased
+print(debias_clip.measure_bias(my_clip, attribute="gender"))
+```
 
 ## Debiasing with Adversarial Learning
 (see [Figure](figures/paper_figure.png).)

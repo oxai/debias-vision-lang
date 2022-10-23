@@ -1,15 +1,13 @@
-import torch.nn as nn
 from abc import ABC
 from typing import Tuple, Callable, Any, Union, List, Dict
 
 import clip as oai_clip
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn import Module
-from torchvision import transforms
 
 from debias_clip import Dotdict
+
 
 class ClipLike(Module, ABC):
     """Essentially a type stub for specifying what a clip-like model supports"""
@@ -28,10 +26,10 @@ class ClipLike(Module, ABC):
     def ln_final(self, text_features) -> Any:
         pass
 
-    def encode_image(self, image) -> Any:
+    def encode_image(self, images) -> torch.Tensor:
         pass
 
-    def named_parameters(self) -> Any:
+    def encode_text(self, tokenized_texts) -> torch.Tensor:
         pass
 
 
@@ -49,11 +47,11 @@ def clip_layers(clip_model) -> Tuple[Dict[str, int], List[Dict[str, Any]]]:
     for name, param in clip_model.named_parameters():
         # top layers always need to train
         if (
-            name.startswith("ln_final.")
-            or name.startswith("text_projection")
-            or name.startswith("logit_scale")
-            or name.startswith("visual.ln_post.")
-            or name.startswith("visual.proj")
+                name.startswith("ln_final.")
+                or name.startswith("text_projection")
+                or name.startswith("logit_scale")
+                or name.startswith("visual.ln_post.")
+                or name.startswith("visual.proj")
         ):
             t = "proj"
             inx = metadata[t]
@@ -75,10 +73,10 @@ def clip_layers(clip_model) -> Tuple[Dict[str, int], List[Dict[str, Any]]]:
         metadata[t] += 1
     for t in {"text", "image"}:
         metadata[t] = (
-            max(
-                classed_parameters, key=lambda cp: cp["index"] if cp["type"] == t else 0
-            )["index"]
-            + 1
+                max(
+                    classed_parameters, key=lambda cp: cp["index"] if cp["type"] == t else 0
+                )["index"]
+                + 1
         )
 
     return metadata, classed_parameters
@@ -94,13 +92,14 @@ VALID_CLIP_MODELS = [
 ]
 
 VALID_MODELS = (
-    # just implement openai clip for now.
-    VALID_CLIP_MODELS # + VALID_FIT_MODELS + VALID_SLIP_MODELS + VALID_FIT_MODELS
+    # openai clips
+    VALID_CLIP_MODELS
 )
 
-def model_loader(
-    model_name, device=None, jit=False
-) -> Tuple[ClipLike, Callable, Callable, Callable]:
+
+def model_loader(model_name, device=None, jit=False) -> Tuple[ClipLike, Callable[[Any], torch.Tensor],
+                                                              Callable[[Any], torch.LongTensor], str]:
+    """Returns cliplike model, preprocessing function for images, tokenizer, and modelname/alias"""
     # Some models aren't compatible with the tokens we generate (they have mismatching dimensions),
 
     if model_name not in VALID_MODELS:
@@ -125,7 +124,7 @@ def model_loader(
 
 class DebiasCLIP(nn.Module):
     """
-    Currently only supporting CLIP models because it will be a pain to generalise this to frozen-in-time etc...
+    Currently only supporting CLIP models because it would be a pain to generalise this to frozen-in-time etc...
     """
 
     @staticmethod
@@ -142,20 +141,9 @@ class DebiasCLIP(nn.Module):
         del cfg["_tokenizer"]
         return debias_clip, preprocess, tokenizer, model_alias
 
-    def __init__(
-        self,
-        clip_model: ClipLike,
-        num_debias_tokens: int,
-        hidden_dim: int = 512,
-        max_tokens: int = 77,
-        n_train_vid_layers: int = 0,
-        n_train_text_layers: int = 0,
-        freeze_proj: bool = True,
-        debias_token_init: Union[str, List[str]] = "zeros",
-        debias_pos: str = "prepend",
-        _tokenizer: callable = None,
-        **_kwargs,
-    ):
+    def __init__(self, clip_model: ClipLike, num_debias_tokens: int, hidden_dim: int = 512, max_tokens: int = 77,
+            n_train_vid_layers: int = 0, n_train_text_layers: int = 0, freeze_proj: bool = True, debias_token_init: Union[str, List[str]] = "zeros",
+            debias_pos: str = "prepend", _tokenizer: callable = None, **_kwargs,):
         super().__init__()
         """
         :param clip_model: a clip model variant
@@ -193,8 +181,8 @@ class DebiasCLIP(nn.Module):
             self.debias_tokens = nn.Embedding.from_pretrained(zero_vecs, freeze=False)
         elif isinstance(debias_token_init, list):
             toks = _tokenizer([" ".join(debias_token_init)])[0][
-                1 : len(debias_token_init) + 1
-            ]
+                   1: len(debias_token_init) + 1
+                   ]
             tok_feats = self.clip.token_embedding(
                 toks.to(self.clip.token_embedding.weight.device)
             )
@@ -230,7 +218,7 @@ class DebiasCLIP(nn.Module):
             # fill in with learned prompts
             if self.num_prompts_tokz > 0:
                 text_features[:, : self.num_prompts_tokz] = debias_features
-            text_features[:, self.num_prompts_tokz :] = smaller_text_features
+            text_features[:, self.num_prompts_tokz:] = smaller_text_features
         elif self.debias_pos == "append":
             if self.num_prompts_tokz == 0:
                 text_features = raw_text_features  # == smaller_text_features
@@ -263,7 +251,7 @@ class DebiasCLIP(nn.Module):
         elif self.debias_pos == "add":
             text_features[:, :] = raw_text_features
             if self.num_prompts_tokz > 0:
-                text_features[:, 1 : 1 + self.num_prompts_tokz] += debias_features
+                text_features[:, 1: 1 + self.num_prompts_tokz] += debias_features
 
         text_features = text_features.permute(1, 0, 2)  # NLD -> LND
         text_features = self.clip.transformer(text_features)
@@ -273,8 +261,8 @@ class DebiasCLIP(nn.Module):
         _argmax = text.argmax(dim=-1) + self.num_prompts_tokz
         _argmax = torch.min(text_features.shape[1] + 0 * _argmax - 1, _argmax)
         text_features = (
-            text_features[torch.arange(text_features.shape[0]), _argmax]
-            @ self.clip.text_projection
+                text_features[torch.arange(text_features.shape[0]), _argmax]
+                @ self.clip.text_projection
         )
         return text_features
 
