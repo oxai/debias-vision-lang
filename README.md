@@ -25,7 +25,7 @@ First, install PyTorch 1.7.1 (or later) and torchvision, as well as small additi
 $ conda install --yes -c pytorch pytorch=1.7.1 torchvision cudatoolkit=11.0
 $ pip install ftfy regex tqdm
 $ pip install git+https://github.com/openai/CLIP.git
-$ pip install git+https://github.com/oxai/debias-vision-lang-private
+$ pip install git+https://github.com/oxai/debias-vision-lang
 ```
 
 
@@ -162,11 +162,15 @@ Our code is licensed under the MIT licence. Read [LICENCE](LICENCE) for more.
 
 ## Citation
 ```bibtex
-@article{berg2022prompt,
+@inproceedings{berg2022prompt,
   title={A Prompt Array Keeps the Bias Away: Debiasing Vision-Language Models with Adversarial Learning},
   author={Berg, Hugo and Hall, Siobhan Mackenzie and Bhalgat, Yash and Yang, Wonsuk and Kirk, Hannah Rose and Shtedritski, Aleksandar and Bain, Max},
-  journal={arXiv preprint arXiv:2203.11933},
-  year={2022}
+  booktitle={Proceedings of the 2nd Conference of the Asia-Pacific Chapter of the Association for Computational Linguistics and the 12th International Joint Conference on Natural Language Processing (Volume 1: Long Papers)},
+  month={nov},
+  year={2022},
+  publisher={Association for Computational Linguistics},
+  url={https://aclanthology.org/2022.aacl-main.61},
+  pages={806--822},
 }
 ```
 
