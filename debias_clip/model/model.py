@@ -167,6 +167,9 @@ class DebiasCLIP(nn.Module):
         self.logit_scale = clip_model.logit_scale
         self.dtype = torch.float32
         self.clip: ClipLike = clip_model
+        self.clip.transformer = self.clip.transformer.float() # float16 vs float32 compatability issues, see https://github.com/oxai/debias-vision-lang/issues/1
+
+        tok_embed_dev = self.clip.token_embedding.weight.device
 
         if debias_token_init == "rand":
             self.debias_tokens = nn.Embedding(self.num_prompts_tokz, self.hidden_dim)
@@ -176,7 +179,7 @@ class DebiasCLIP(nn.Module):
             zero_vecs = self.clip.token_embedding(
                 torch.zeros(self.num_prompts_tokz)
                 .int()
-                .to(self.clip.token_embedding.weight.device)
+                .to(tok_embed_dev)
             )
             self.debias_tokens = nn.Embedding.from_pretrained(zero_vecs, freeze=False)
         elif isinstance(debias_token_init, list):
@@ -184,12 +187,13 @@ class DebiasCLIP(nn.Module):
                    1: len(debias_token_init) + 1
                    ]
             tok_feats = self.clip.token_embedding(
-                toks.to(self.clip.token_embedding.weight.device)
+                toks.to(tok_embed_dev)
             )
             self.debias_tokens = nn.Embedding.from_pretrained(tok_feats, freeze=False)
         else:
             raise NotImplementedError
 
+        self.debias_tokens = self.debias_tokens.to(tok_embed_dev)
         self.freeze_model_layers()
 
     def encode_text(self, text):
@@ -262,7 +266,7 @@ class DebiasCLIP(nn.Module):
         _argmax = torch.min(text_features.shape[1] + 0 * _argmax - 1, _argmax)
         text_features = (
                 text_features[torch.arange(text_features.shape[0]), _argmax]
-                @ self.clip.text_projection
+                @ self.clip.text_projection.float()
         )
         return text_features
 
@@ -273,7 +277,7 @@ class DebiasCLIP(nn.Module):
         # initialise text feats with zeros
 
         text_features = self.encode_text(text)
-        image_features = self.clip.encode_image(image)
+        image_features = self.clip.encode_image(image).float()
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
